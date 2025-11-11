@@ -22,9 +22,22 @@ try:
         result = porcupine.process(pcm)
         if result >= 0:
             print("Wake word detected!")
-            # Launch recorder
-            import subprocess
-            subprocess.run([sys.executable, "recorder.py"])
+            # Launch recorder in subprocess (non-blocking with Popen instead of run)
+            try:
+                # Option 1: Non-blocking - continues listening while recorder runs
+                # subprocess.Popen([sys.executable, "recorder.py"])
+                
+                # Option 2: Blocking but with error handling
+                subprocess.run([sys.executable, "recorder.py"], timeout=35)
+                
+                # Small delay to prevent multiple rapid triggers
+                import time
+                time.sleep(0.5)
+            except subprocess.TimeoutExpired:
+                print("Recording timeout - continuing to listen...")
+            except Exception as e:
+                print(f"Error running recorder: {e}")
+                # Continue listening even if recorder fails
 except KeyboardInterrupt:
     print("Stopping...")
 finally:
