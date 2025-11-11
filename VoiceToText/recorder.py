@@ -138,8 +138,8 @@ def conversation_loop():
     print("\n💬 Entering conversation mode - no wake word needed")
     
     while True:
-        # Wait a moment for TTS to finish and user to start speaking
-        time.sleep(1.5)
+        # Wait longer for TTS to finish speaking before listening
+        time.sleep(3.0)  # Increased from 1.5 to 3 seconds
         
         print("\n🎤 Listening for your response...")
         

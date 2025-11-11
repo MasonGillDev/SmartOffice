@@ -28,7 +28,8 @@ try:
                 # subprocess.Popen([sys.executable, "recorder.py"])
                 
                 # Option 2: Blocking but with error handling
-                subprocess.run([sys.executable, "recorder.py"], timeout=35)
+                # Increased timeout for conversation mode (can have multiple back-and-forth)
+                subprocess.run([sys.executable, "recorder.py"], timeout=300)  # 5 minutes
                 
                 # Small delay to prevent multiple rapid triggers
                 import time
