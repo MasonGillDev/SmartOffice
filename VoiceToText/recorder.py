@@ -14,6 +14,8 @@ import wave
 import struct
 import tempfile
 import os
+import requests
+import json
 
 def record_until_silence(silence_threshold=500, silence_duration=1.5, max_duration=30):
     """Record audio until silence detected"""
@@ -94,6 +96,34 @@ def transcribe_audio(wav_path):
     text = result.get("text", "")
     return text.strip() if isinstance(text, str) else ""
 
+def send_to_server(text, server_url="http://192.168.1.197:5000"):
+    """Send transcribed text to the Flask server"""
+    try:
+        url = f"{server_url}/build_prompt"
+        payload = {"prompt": text}
+        headers = {"Content-Type": "application/json"}
+        
+        print(f"📤 Sending to server: {url}")
+        response = requests.post(url, json=payload, headers=headers, timeout=5)
+        
+        if response.status_code == 200:
+            print("✅ Successfully sent to server")
+            return True
+        else:
+            print(f"❌ Server returned status: {response.status_code}")
+            print(f"Response: {response.text}")
+            return False
+            
+    except requests.exceptions.ConnectionError:
+        print(f"❌ Could not connect to server at {server_url}")
+        return False
+    except requests.exceptions.Timeout:
+        print("❌ Request timed out")
+        return False
+    except Exception as e:
+        print(f"❌ Error sending to server: {e}")
+        return False
+
 def main():
     """Main function - called when wake word detected"""
     # Record audio
@@ -111,11 +141,14 @@ def main():
         text = transcribe_audio(wav_path)
         print(f"\n📝 You said: \"{text}\"")
         
-        # Save to file for other programs to use
-        with open("last_command.txt", "w") as f:
-            f.write(text)
+        # Send to server instead of saving to file
+        success = send_to_server(text)
         
-        return text
+        if success:
+            return text
+        else:
+            print("Failed to send to server")
+            return None
         
     finally:
         # Cleanup temp file

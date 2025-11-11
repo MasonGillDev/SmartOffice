@@ -2,3 +2,5 @@ pvporcupine
 pvrecorder
 openai-whisper
 numpy
+flask
+requests
