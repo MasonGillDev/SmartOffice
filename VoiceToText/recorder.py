@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple audio recorder with Whisper transcription
+Simple audio recorder with Whisper transcription (using Apple MPS)
 Triggered after wake word detection
 """
 
@@ -9,6 +9,7 @@ import time
 import numpy as np
 from pvrecorder import PvRecorder
 import whisper
+import torch
 import wave
 import struct
 import tempfile
@@ -71,16 +72,27 @@ def save_audio_to_wav(frames, sample_rate=16000):
     return temp_file.name
 
 def transcribe_audio(wav_path):
-    """Transcribe audio using Whisper"""
+    """Transcribe audio using Whisper with Apple MPS acceleration"""
     print("\n🔄 Transcribing...")
     
-    # Load Whisper model (downloads on first run)
-    model = whisper.load_model("small")
+    # Use MPS (Metal Performance Shaders) if available on Apple Silicon
+    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    print(f"Using device: {device}")
     
-    # Transcribe
-    result = model.transcribe(wav_path)
+    # Load Whisper model on MPS for Apple Silicon acceleration
+    # "base" model for speed, "small" for better accuracy
+    model = whisper.load_model("base", device=device)
     
-    return result["text"]
+    # Transcribe with optimizations
+    result = model.transcribe(
+        wav_path,
+        language="en",  # Skip language detection for speed
+        fp16=(device == "mps")  # Use FP16 on MPS for speed, FP32 on CPU
+    )
+    
+    # Ensure we return a string (whisper always returns text as string, but type checker doesn't know)
+    text = result.get("text", "")
+    return text.strip() if isinstance(text, str) else ""
 
 def main():
     """Main function - called when wake word detected"""
