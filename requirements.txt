@@ -5,3 +5,5 @@ numpy
 flask
 requests
 openai
+pygame
+google-cloud-texttospeech

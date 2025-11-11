@@ -97,36 +97,95 @@ def transcribe_audio(wav_path):
     return text.strip() if isinstance(text, str) else ""
 
 def send_to_server(text, server_url="http://192.168.1.197:5000"):
-    """Send transcribed text to the Flask server"""
+    """Send transcribed text to the Flask server and get conversation mode status"""
     try:
         url = f"{server_url}/build_prompt"
         payload = {"prompt": text}
         headers = {"Content-Type": "application/json"}
         
         print(f"📤 Sending to server: {url}")
-        response = requests.post(url, json=payload, headers=headers, timeout=5)
+        response = requests.post(url, json=payload, headers=headers, timeout=30)  # Increased timeout for AI response
         
         if response.status_code == 200:
             print("✅ Successfully sent to server")
-            return True
+            response_data = response.json()
+            
+            # Check conversation mode flag
+            conversation_mode = response_data.get("conversation_mode", False)
+            action = response_data.get("action", "end_conversation")
+            
+            print(f"📍 Conversation mode: {conversation_mode}")
+            print(f"📍 Action: {action}")
+            
+            return True, conversation_mode
         else:
             print(f"❌ Server returned status: {response.status_code}")
             print(f"Response: {response.text}")
-            return False
+            return False, False
             
     except requests.exceptions.ConnectionError:
         print(f"❌ Could not connect to server at {server_url}")
-        return False
+        return False, False
     except requests.exceptions.Timeout:
         print("❌ Request timed out")
-        return False
+        return False, False
     except Exception as e:
         print(f"❌ Error sending to server: {e}")
-        return False
+        return False, False
+
+def conversation_loop():
+    """Handle continuous conversation until ended"""
+    print("\n💬 Entering conversation mode - no wake word needed")
+    
+    while True:
+        # Wait a moment for TTS to finish and user to start speaking
+        time.sleep(1.5)
+        
+        print("\n🎤 Listening for your response...")
+        
+        # Record with a timeout for conversation mode
+        frames = record_until_silence(silence_duration=2.0, max_duration=20)
+        
+        if not frames:
+            print("No audio detected - ending conversation")
+            break
+        
+        # Process audio
+        wav_path = save_audio_to_wav(frames)
+        
+        try:
+            # Transcribe
+            text = transcribe_audio(wav_path)
+            
+            if not text or text.strip() == "":
+                print("No speech detected - continuing to listen...")
+                continue
+                
+            print(f"\n📝 You said: \"{text}\"")
+            
+            # Send to server and check if conversation should continue
+            success, continue_conversation = send_to_server(text)
+            
+            if not success:
+                print("Failed to communicate with server")
+                break
+                
+            if not continue_conversation:
+                print("\n👋 Conversation ended - returning to wake word mode")
+                break
+                
+            # Continue the loop for next interaction
+            
+        finally:
+            # Cleanup temp file
+            if os.path.exists(wav_path):
+                os.unlink(wav_path)
+    
+    print("🔚 Exiting conversation mode")
 
 def main():
     """Main function - called when wake word detected"""
-    # Record audio
+    # Record initial audio
     frames = record_until_silence()
     
     if not frames:
@@ -141,18 +200,23 @@ def main():
         text = transcribe_audio(wav_path)
         print(f"\n📝 You said: \"{text}\"")
         
-        # Send to server instead of saving to file
-        success = send_to_server(text)
+        # Send to server and check conversation mode
+        success, continue_conversation = send_to_server(text)
         
-        if success:
-            return text
-        else:
+        if not success:
             print("Failed to send to server")
             return None
         
+        # If server indicates conversation mode, enter the loop
+        if continue_conversation:
+            conversation_loop()
+        
+        return text
+        
     finally:
         # Cleanup temp file
-        os.unlink(wav_path)
+        if os.path.exists(wav_path):
+            os.unlink(wav_path)
 
 if __name__ == "__main__":
     result = main()

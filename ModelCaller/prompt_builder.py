@@ -12,6 +12,17 @@ class PromptBuilder:
     def __init__(self):
         self.system_prompt = """You are a helpful AI assistant. You provide clear, accurate, and helpful responses to user queries. 
 Be concise but thorough in your answers."""
+        
+        self.conversation_system_prompt = """You are a helpful AI assistant engaged in a conversation. You provide clear, accurate, and helpful responses.
+
+IMPORTANT: When the user indicates they want to end the conversation (saying things like "goodbye", "that's all", "thank you that's it", "I'm done", "goodnight", or similar), 
+you MUST respond with "end_conversation_mode" as the VERY LAST LINE of your response. First give a polite farewell, then add "end_conversation_mode" on a new line.
+
+Example:
+User: "That will be all, thank you"
+Assistant: "You're welcome! Have a great day!
+end_conversation_mode"
+"""
     
     def build_prompt(self, user_message: str, context: Optional[Dict] = None) -> Dict:
         """
@@ -76,6 +87,54 @@ Be concise but thorough in your answers."""
 User Query: {user_message}
 
 Assistant Response:"""
+        
+        return prompt
+    
+    def build_conversation_prompt(self, user_message: str, conversation_history: Optional[List[Dict]] = None) -> Dict:
+        """
+        Build a prompt for conversation mode with history
+        
+        Args:
+            user_message: Current user input
+            conversation_history: List of previous messages in the conversation
+            
+        Returns:
+            Dict containing the formatted prompt for the model
+        """
+        
+        # Build message list for chat format
+        messages = []
+        
+        # Use conversation-specific system prompt
+        messages.append({
+            "role": "system",
+            "content": self.conversation_system_prompt
+        })
+        
+        # Add conversation history if provided
+        if conversation_history:
+            messages.extend(conversation_history)
+        
+        # Add current user message
+        messages.append({
+            "role": "user",
+            "content": user_message
+        })
+        
+        # Build complete prompt object
+        prompt = {
+            "messages": messages,
+            "timestamp": datetime.now().isoformat(),
+            "user_input": user_message,
+            "metadata": {
+                "prompt_version": "1.0",
+                "builder": "PromptBuilder",
+                "mode": "conversation",
+                "history_length": len(conversation_history) if conversation_history else 0
+            }
+        }
+        
+        print(f"💬 Built conversation prompt with {len(messages)-2} history messages")
         
         return prompt
     
