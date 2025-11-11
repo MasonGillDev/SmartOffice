@@ -3,6 +3,8 @@
 
 import pvporcupine
 from pvrecorder import PvRecorder
+import subprocess
+import sys
 
 access_key = "JfYOI8ILb8hMUxuFtieWXlWNV+qvDrilX+cFKSn+F0ovHf66p4kI3A=="
 # Initialize Porcupine with a built-in wake word
@@ -20,6 +22,9 @@ try:
         result = porcupine.process(pcm)
         if result >= 0:
             print("Wake word detected!")
+            # Launch recorder
+            import subprocess
+            subprocess.run([sys.executable, "recorder.py"])
 except KeyboardInterrupt:
     print("Stopping...")
 finally:

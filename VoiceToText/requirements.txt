@@ -1,0 +1,4 @@
+pvporcupine
+pvrecorder
+openai-whisper
+numpy
