@@ -20,14 +20,15 @@ from audio_cues import AudioCue
 
 def record_until_silence(silence_threshold=500, silence_duration=1.5, max_duration=30, audio_cue=None):
     """Record audio until silence detected"""
-    # Play start listening cue
+    # Initialize recorder first (this takes time)
+    recorder = PvRecorder(device_index=-1, frame_length=512)
+    recorder.start()
+    
+    # NOW play the audio cue and show message - we're actually listening
     if audio_cue:
         audio_cue.play_start_listening()
     
     print("🎤 Listening...")
-    
-    recorder = PvRecorder(device_index=-1, frame_length=512)
-    recorder.start()
     
     audio_frames = []
     silence_start = None
