@@ -106,29 +106,31 @@ def transcribe_audio(wav_path):
     return text.strip() if isinstance(text, str) else ""
 
 def wait_for_tts_completion(task_id, server_url="http://192.168.1.197:5000"):
-    """Wait for TTS playback to complete using long polling"""
+    """Wait for TTS playback to complete using long polling - no timeout"""
     try:
         url = f"{server_url}/wait_for_tts/{task_id}"
-        print(f"⏳ Waiting for TTS to complete (task: {task_id})...")
+        print(f"⏳ Waiting for TTS to complete (task: {task_id}) - no timeout...")
         
-        # Long polling request - server will hold connection until TTS completes
-        response = requests.get(url, timeout=35)  # 35 seconds (5 more than server timeout)
+        # Long polling request - NO TIMEOUT, wait indefinitely
+        # Using a very high timeout value since some libraries don't accept None
+        response = requests.get(url, timeout=3600)  # 1 hour should cover any response
         
         if response.status_code == 200:
             data = response.json()
             if data.get("tts_complete"):
                 print("✅ TTS playback complete")
                 return True
-            elif data.get("timeout"):
-                print("⏱️ TTS wait timeout - proceeding anyway")
-                return False
+            else:
+                print("⚠️ Unexpected response from TTS wait")
+                return True  # Proceed anyway
         else:
             print(f"❌ Error waiting for TTS: status {response.status_code}")
             return False
             
     except requests.exceptions.Timeout:
-        print("⏱️ TTS wait timeout")
-        return False
+        # Should rarely happen with 1 hour timeout
+        print("⏱️ Extremely long TTS - proceeding")
+        return True
     except Exception as e:
         print(f"❌ Error waiting for TTS: {e}")
         return False

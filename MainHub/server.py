@@ -43,16 +43,15 @@ def healthcheck():
 @app.route('/wait_for_tts/<task_id>', methods=['GET'])
 def wait_for_tts(task_id):
     """
-    Long polling endpoint - waits until TTS playback completes
-    Blocks until TTS is done or timeout (30 seconds)
+    Long polling endpoint - waits indefinitely until TTS playback completes
+    No timeout - will wait as long as needed for TTS to finish
     """
-    timeout = 30  # Maximum wait time
     poll_interval = 0.1  # How often to check status
-    start_time = time.time()
     
-    print(f"📡 Long poll request for TTS task: {task_id}")
+    print(f"📡 Long poll request for TTS task: {task_id} (no timeout)")
     
-    while time.time() - start_time < timeout:
+    # Wait indefinitely until TTS completes
+    while True:
         with tts_states_lock:
             state = tts_states.get(task_id)
         
@@ -60,14 +59,16 @@ def wait_for_tts(task_id):
             print(f"✅ TTS complete for task {task_id}, returning to recorder")
             # Clean up the state
             with tts_states_lock:
-                del tts_states[task_id]
+                if task_id in tts_states:
+                    del tts_states[task_id]
             return jsonify({"tts_complete": True, "task_id": task_id}), 200
         
+        # Check if task_id exists (in case of error)
+        if state is None:
+            print(f"⚠️ Task {task_id} not found - may have completed already")
+            return jsonify({"tts_complete": True, "task_id": task_id, "warning": "task not found"}), 200
+        
         time.sleep(poll_interval)
-    
-    # Timeout reached
-    print(f"⏱️ Long poll timeout for task {task_id}")
-    return jsonify({"tts_complete": False, "timeout": True, "task_id": task_id}), 200
 
 @app.route('/build_prompt', methods=['POST'])
 def build_prompt():
