@@ -22,8 +22,8 @@ class GoogleTTS:
                             (if not provided, will look for GOOGLE_APPLICATION_CREDENTIALS env var)
         """
         # Set credentials path if provided
-        if credentials_path:
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+        credentials_path = "/home/mason/SmartOffice/oceanic-toolbox-469714-h7-6ee0a211626d.json"
+           
         
         try:
             # Initialize the TTS client

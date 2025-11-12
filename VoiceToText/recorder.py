@@ -16,9 +16,14 @@ import tempfile
 import os
 import requests
 import json
+from audio_cues import AudioCue
 
-def record_until_silence(silence_threshold=500, silence_duration=1.5, max_duration=30):
+def record_until_silence(silence_threshold=500, silence_duration=1.5, max_duration=30, audio_cue=None):
     """Record audio until silence detected"""
+    # Play start listening cue
+    if audio_cue:
+        audio_cue.play_start_listening()
+    
     print("🎤 Listening...")
     
     recorder = PvRecorder(device_index=-1, frame_length=512)
@@ -48,6 +53,9 @@ def record_until_silence(silence_threshold=500, silence_duration=1.5, max_durati
                     silence_start = time.time()
                 elif time.time() - silence_start > silence_duration:
                     print("Silence detected, stopping")
+                    # Play stop listening cue
+                    if audio_cue:
+                        audio_cue.play_stop_listening()
                     break
             else:
                 silence_start = None
@@ -133,7 +141,7 @@ def send_to_server(text, server_url="http://192.168.1.197:5000"):
         print(f"❌ Error sending to server: {e}")
         return False, False
 
-def conversation_loop():
+def conversation_loop(audio_cue):
     """Handle continuous conversation until ended"""
     print("\n💬 Entering conversation mode - no wake word needed")
     
@@ -144,7 +152,7 @@ def conversation_loop():
         print("\n🎤 Listening for your response...")
         
         # Record with a timeout for conversation mode
-        frames = record_until_silence(silence_duration=2.0, max_duration=20)
+        frames = record_until_silence(silence_duration=2.0, max_duration=20, audio_cue=audio_cue)
         
         if not frames:
             print("No audio detected - ending conversation")
@@ -185,17 +193,24 @@ def conversation_loop():
 
 def main():
     """Main function - called when wake word detected"""
+    # Initialize audio cue system
+    audio_cue = AudioCue()
+    
     # Record initial audio
-    frames = record_until_silence()
+    frames = record_until_silence(audio_cue=audio_cue)
     
     if not frames:
         print("No audio recorded")
+        audio_cue.play_error()
         return None
     
     # Save to WAV
     wav_path = save_audio_to_wav(frames)
     
     try:
+        # Play thinking sound before transcribing
+        audio_cue.play_thinking()
+        
         # Transcribe
         text = transcribe_audio(wav_path)
         print(f"\n📝 You said: \"{text}\"")
@@ -205,11 +220,12 @@ def main():
         
         if not success:
             print("Failed to send to server")
+            audio_cue.play_error()
             return None
         
         # If server indicates conversation mode, enter the loop
         if continue_conversation:
-            conversation_loop()
+            conversation_loop(audio_cue)
         
         return text
         

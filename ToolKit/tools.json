@@ -1,0 +1,16 @@
+{
+    "tools":{
+        "get_note":
+        {
+            "description": "Retrieve all notes to find the relevent one or ones for the users request.",
+            "usage": "When the user request past knowledge that may be stored in a  note, use get_note"
+        },
+
+        "post_note":
+        {
+            "description": "When a user request to save a note we post_note.",
+            "usage": "Make a note that I have an appointment at 10."
+            
+        }
+    }
+}

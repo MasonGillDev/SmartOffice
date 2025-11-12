@@ -9,13 +9,30 @@ from datetime import datetime
 class PromptBuilder:
     """Build prompts for AI assistant"""
     
-    def __init__(self):
+    def __init__(self, tool_manager=None):
+        self.tool_manager = tool_manager
         self.system_prompt = """You are a helpful AI assistant. You provide clear, accurate, and helpful responses to user queries. 
 Be concise but thorough in your answers."""
         
-        self.conversation_system_prompt = """You are a helpful AI assistant engaged in a conversation. You provide clear, accurate, and helpful responses.
+        # Base conversation prompt
+        self.base_conversation_prompt = """You are a helpful AI assistant engaged in a conversation. You provide clear, accurate, and helpful responses.
 
-IMPORTANT: When the user indicates they want to end the conversation (saying things like "goodbye", "that's all", "thank you that's it", "I'm done", "goodnight", or similar), 
+"""
+        
+        # This will be built dynamically with tools
+        self._update_conversation_prompt()
+    
+    def _update_conversation_prompt(self):
+        """Update conversation prompt with available tools"""
+        self.conversation_system_prompt = self.base_conversation_prompt
+        
+        # Add tools if tool_manager is available
+        if self.tool_manager:
+            self.conversation_system_prompt += self.tool_manager.get_tools_for_prompt()
+            self.conversation_system_prompt += "\n\n"
+        
+        # Add conversation ending instructions
+        self.conversation_system_prompt += """IMPORTANT: When the user indicates they want to end the conversation (saying things like "goodbye", "that's all", "thank you that's it", "I'm done", "goodnight", or similar), 
 you MUST respond with "end_conversation_mode" as the VERY LAST LINE of your response. First give a polite farewell, then add "end_conversation_mode" on a new line.
 
 Example:
@@ -23,6 +40,11 @@ User: "That will be all, thank you"
 Assistant: "You're welcome! Have a great day!
 end_conversation_mode"
 """
+    
+    def set_tool_manager(self, tool_manager):
+        """Set or update the tool manager"""
+        self.tool_manager = tool_manager
+        self._update_conversation_prompt()
     
     def build_prompt(self, user_message: str, context: Optional[Dict] = None) -> Dict:
         """
