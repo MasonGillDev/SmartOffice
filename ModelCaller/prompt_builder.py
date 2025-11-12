@@ -24,12 +24,16 @@ Be concise but thorough in your answers."""
     
     def _update_conversation_prompt(self):
         """Update conversation prompt with available tools"""
-        self.conversation_system_prompt = self.base_conversation_prompt
+        # Add today's date to the prompt
+        today = datetime.now().strftime("%A, %B %d, %Y")
+        date_context = f"Today's date is: {today}\n\n"
+        
+        self.conversation_system_prompt = date_context + self.base_conversation_prompt
         
         # Add tools if tool_manager is available
         if self.tool_manager:
             self.conversation_system_prompt += self.tool_manager.get_tools_for_prompt()
-            self.conversation_system_prompt += "\n\n"
+            self.conversation_system_prompt += "\n\nREMEMBER: Always use tools for system queries, even in conversation context.\n\n"
         
         # Add conversation ending instructions
         self.conversation_system_prompt += """IMPORTANT: When the user indicates they want to end the conversation (saying things like "goodbye", "that's all", "thank you that's it", "I'm done", "goodnight", or similar), 

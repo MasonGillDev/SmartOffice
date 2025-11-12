@@ -111,6 +111,12 @@ def build_prompt():
         # Use conversation prompt builder if in conversation mode
         built_prompt = prompt_builder.build_conversation_prompt(user_prompt, conversation_history)
         
+        # Debug: Print the system prompt being sent
+        print("📋 System prompt preview (first 1500 chars):")
+        if built_prompt and 'messages' in built_prompt and len(built_prompt['messages']) > 0:
+            system_msg = built_prompt['messages'][0].get('content', '')[:1500]
+            print(system_msg + "..." if len(system_msg) == 1500 else system_msg)
+        
         # Step 2: Send to ModelCaller
         print("🤖 Calling AI model...")
         model_response = model_caller.call_model(built_prompt)
