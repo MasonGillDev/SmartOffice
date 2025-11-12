@@ -105,6 +105,34 @@ def transcribe_audio(wav_path):
     text = result.get("text", "")
     return text.strip() if isinstance(text, str) else ""
 
+def wait_for_tts_completion(task_id, server_url="http://192.168.1.197:5000"):
+    """Wait for TTS playback to complete using long polling"""
+    try:
+        url = f"{server_url}/wait_for_tts/{task_id}"
+        print(f"⏳ Waiting for TTS to complete (task: {task_id})...")
+        
+        # Long polling request - server will hold connection until TTS completes
+        response = requests.get(url, timeout=35)  # 35 seconds (5 more than server timeout)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("tts_complete"):
+                print("✅ TTS playback complete")
+                return True
+            elif data.get("timeout"):
+                print("⏱️ TTS wait timeout - proceeding anyway")
+                return False
+        else:
+            print(f"❌ Error waiting for TTS: status {response.status_code}")
+            return False
+            
+    except requests.exceptions.Timeout:
+        print("⏱️ TTS wait timeout")
+        return False
+    except Exception as e:
+        print(f"❌ Error waiting for TTS: {e}")
+        return False
+
 def send_to_server(text, server_url="http://192.168.1.197:5000"):
     """Send transcribed text to the Flask server and get conversation mode status"""
     try:
@@ -119,12 +147,20 @@ def send_to_server(text, server_url="http://192.168.1.197:5000"):
             print("✅ Successfully sent to server")
             response_data = response.json()
             
+            # Get task ID for TTS tracking
+            task_id = response_data.get("task_id")
+            
             # Check conversation mode flag
             conversation_mode = response_data.get("conversation_mode", False)
             action = response_data.get("action", "end_conversation")
             
+            print(f"📍 Task ID: {task_id}")
             print(f"📍 Conversation mode: {conversation_mode}")
             print(f"📍 Action: {action}")
+            
+            # Wait for TTS to complete using long polling
+            if task_id:
+                wait_for_tts_completion(task_id, server_url)
             
             return True, conversation_mode
         else:
@@ -147,8 +183,8 @@ def conversation_loop(audio_cue):
     print("\n💬 Entering conversation mode - no wake word needed")
     
     while True:
-        # Wait longer for TTS to finish speaking before listening
-        time.sleep(3.0)  # Increased from 1.5 to 3 seconds
+        # Small delay before next recording (TTS is already complete due to long polling)
+        time.sleep(0.5)  # Reduced from 3.0 since we now wait for TTS properly
         
         print("\n🎤 Listening for your response...")
         

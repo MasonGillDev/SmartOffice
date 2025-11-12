@@ -3,6 +3,9 @@ import logging
 import sys
 import os
 from datetime import datetime
+import uuid
+import threading
+import time
 
 # Add parent directory to path to import ModelCaller modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,10 +31,43 @@ tts = GoogleTTS()  # Will use GOOGLE_API_KEY env var
 conversation_history = []
 conversation_mode = False
 
+# Track TTS playback states for each request
+tts_states = {}  # {task_id: 'playing' | 'complete'}
+tts_states_lock = threading.Lock()
+
 @app.route('/health', methods=['GET'])
 def healthcheck():
     """Health check endpoint to verify server is running"""
     return jsonify({"status": "healthy", "message": "Server is running"}), 200
+
+@app.route('/wait_for_tts/<task_id>', methods=['GET'])
+def wait_for_tts(task_id):
+    """
+    Long polling endpoint - waits until TTS playback completes
+    Blocks until TTS is done or timeout (30 seconds)
+    """
+    timeout = 30  # Maximum wait time
+    poll_interval = 0.1  # How often to check status
+    start_time = time.time()
+    
+    print(f"📡 Long poll request for TTS task: {task_id}")
+    
+    while time.time() - start_time < timeout:
+        with tts_states_lock:
+            state = tts_states.get(task_id)
+        
+        if state == 'complete':
+            print(f"✅ TTS complete for task {task_id}, returning to recorder")
+            # Clean up the state
+            with tts_states_lock:
+                del tts_states[task_id]
+            return jsonify({"tts_complete": True, "task_id": task_id}), 200
+        
+        time.sleep(poll_interval)
+    
+    # Timeout reached
+    print(f"⏱️ Long poll timeout for task {task_id}")
+    return jsonify({"tts_complete": False, "timeout": True, "task_id": task_id}), 200
 
 @app.route('/build_prompt', methods=['POST'])
 def build_prompt():
@@ -148,12 +184,31 @@ def build_prompt():
                 conversation_history.append({"role": "assistant", "content": ai_response_clean})
                 print(f"💾 Updated conversation history (now {len(conversation_history)} messages)")
             
-            # Step 4: Send to Text-to-Speech
-            print("🔊 Converting response to speech...")
-            tts_success = tts.speak(ai_response_clean)
+            # Generate a task ID for tracking TTS playback
+            task_id = str(uuid.uuid4())
             
-            if not tts_success:
-                print("⚠️  TTS failed, but text response is available")
+            # Step 4: Send to Text-to-Speech (in background thread)
+            print("🔊 Starting TTS playback...")
+            
+            def play_tts_with_tracking():
+                with tts_states_lock:
+                    tts_states[task_id] = 'playing'
+                
+                # Synthesize and play
+                tts_success = tts.speak(ai_response_clean)
+                
+                # Mark as complete
+                with tts_states_lock:
+                    tts_states[task_id] = 'complete'
+                    
+                if not tts_success:
+                    print("⚠️  TTS failed")
+                else:
+                    print(f"✅ TTS complete for task {task_id}")
+            
+            # Start TTS in background thread
+            tts_thread = threading.Thread(target=play_tts_with_tracking)
+            tts_thread.start()
             
             # Handle conversation ending
             if end_conversation:
@@ -163,13 +218,14 @@ def build_prompt():
             
             return jsonify({
                 "status": "success",
+                "task_id": task_id,  # For tracking TTS completion
                 "user_prompt": user_prompt,
                 "ai_response": ai_response_clean,
                 "conversation_mode": conversation_mode,  # Key flag for recorder
                 "action": "continue_listening" if conversation_mode else "end_conversation",
                 "usage": model_response.get("usage", {}),
                 "model": model_response.get("model", "unknown"),
-                "tts_played": tts_success
+                "tts_started": True  # TTS is playing in background
             }), 200
         else:
             error_msg = model_response.get("error", "Unknown error occurred")
