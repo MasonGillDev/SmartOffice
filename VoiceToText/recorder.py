@@ -180,9 +180,21 @@ def send_to_server(text, server_url="http://192.168.1.197:5000"):
         print(f"❌ Error sending to server: {e}")
         return False, False
 
+def notify_conversation_end(server_url="http://192.168.1.197:5000"):
+    """Notify server that conversation mode has ended"""
+    try:
+        url = f"{server_url}/end_conversation"
+        response = requests.post(url, timeout=5)
+        if response.status_code == 200:
+            print("📡 Server notified of conversation end")
+    except Exception as e:
+        print(f"Could not notify server of conversation end: {e}")
+
 def conversation_loop(audio_cue):
     """Handle continuous conversation until ended"""
     print("\n💬 Entering conversation mode - no wake word needed")
+    
+    empty_count = 0  # Track consecutive empty recordings
     
     while True:
         # Small delay before next recording (TTS is already complete due to long polling)
@@ -194,8 +206,14 @@ def conversation_loop(audio_cue):
         frames = record_until_silence(silence_duration=2.0, max_duration=20, audio_cue=audio_cue)
         
         if not frames:
-            print("No audio detected - ending conversation")
-            break
+            empty_count += 1
+            print(f"No audio detected (empty count: {empty_count})")
+            if empty_count >= 2:
+                print("Two consecutive empty recordings - ending conversation")
+                break
+            else:
+                print("Continuing to listen...")
+                continue
         
         # Process audio
         wav_path = save_audio_to_wav(frames)
@@ -205,9 +223,18 @@ def conversation_loop(audio_cue):
             text = transcribe_audio(wav_path)
             
             if not text or text.strip() == "":
-                print("No speech detected - continuing to listen...")
-                continue
-                
+                empty_count += 1
+                print(f"No speech detected (empty count: {empty_count})")
+                if empty_count >= 2:
+                    print("Two consecutive empty transcriptions - ending conversation")
+                    break
+                else:
+                    print("Continuing to listen...")
+                    continue
+            
+            # Reset empty count on successful speech detection
+            empty_count = 0
+            
             print(f"\n📝 You said: \"{text}\"")
             
             # Send to server and check if conversation should continue
@@ -228,6 +255,8 @@ def conversation_loop(audio_cue):
             if os.path.exists(wav_path):
                 os.unlink(wav_path)
     
+    # Notify server that conversation mode has ended
+    notify_conversation_end(server_url="http://192.168.1.197:5000")
     print("🔚 Exiting conversation mode")
 
 def main():

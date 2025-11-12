@@ -40,6 +40,17 @@ def healthcheck():
     """Health check endpoint to verify server is running"""
     return jsonify({"status": "healthy", "message": "Server is running"}), 200
 
+@app.route('/end_conversation', methods=['POST'])
+def end_conversation():
+    """Endpoint to notify server that conversation mode has ended"""
+    global conversation_mode, conversation_history
+    
+    conversation_mode = False
+    conversation_history = []
+    
+    print("📡 Received conversation end notification - clearing history")
+    return jsonify({"status": "success", "message": "Conversation mode ended"}), 200
+
 @app.route('/wait_for_tts/<task_id>', methods=['GET'])
 def wait_for_tts(task_id):
     """

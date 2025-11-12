@@ -22,7 +22,7 @@ class PostNoteTool(BaseTool):
         return "post_note"
     
     def get_description(self) -> str:
-        return "Create and save a note with timestamp to the notes directory"
+        return "Save a note ONLY when user explicitly asks to 'note', 'save', 'remember', or 'write down' something for later"
     
     def get_parameters(self) -> Dict[str, Any]:
         return {

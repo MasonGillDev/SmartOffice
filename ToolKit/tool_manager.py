@@ -85,10 +85,23 @@ class ToolManager:
                     param_examples.append(f'"{param_name}": "value"')
             tools_desc += ', '.join(param_examples) + '}}}\n\n'
         
-        tools_desc += """When using a tool:
-1. First acknowledge the user's request
-2. Then include the tool call as JSON on a new line
-3. Keep your response brief"""
+        tools_desc += """
+IMPORTANT TOOL USAGE RULES:
+1. ONLY use tools when the user EXPLICITLY asks for that action
+2. DO NOT use post_note unless the user says words like "note", "save", "remember", "write down"
+3. DO NOT use get_note unless the user asks about past notes or what they noted before
+4. For general conversation, answer WITHOUT using any tools
+5. When you DO use a tool:
+   - First acknowledge the user's request
+   - Then include the tool call as JSON on a new line
+   - Keep your response brief
+
+Examples of when to use post_note:
+✓ "Note that I have a meeting at 3pm"
+✓ "Save a reminder about calling mom"
+✓ "Remember to buy milk"
+✗ "I have a meeting at 3pm" (just conversation, no note request)
+✗ "What's the weather?" (no note request)"""
         
         return tools_desc
     
