@@ -51,7 +51,7 @@ class GetWeatherTool(BaseTool):
         return "get_weather"
     
     def get_description(self) -> str:
-        return "Get current weather and forecast for any city. No API key needed!"
+        return "Get current weather and forecast for any city. If the user ask for a specific date you must request the forcast up to that day. You can do this by looking at the current date and compare that to the date requested and adding the correct forecast_days"
     
     def get_tool_type(self):
         """This is a retrieval tool - data needs to be fed back to LLM"""
@@ -153,7 +153,7 @@ class GetWeatherTool(BaseTool):
             
             # Ensure forecast_days is an integer (might come as string from JSON)
             if forecast_days is not None:
-                forecast_days = int(forecast_days)
+                forecast_days = int(forecast_days) + 1
             else:
                 forecast_days = 3
             

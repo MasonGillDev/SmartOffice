@@ -138,7 +138,8 @@ def wait_for_tts_completion(task_id, server_url="http://192.168.1.197:5000"):
 def send_to_server(text, server_url="http://192.168.1.197:5000"):
     """Send transcribed text to the Flask server and get conversation mode status"""
     try:
-        url = f"{server_url}/build_prompt"
+        # Use the new /query endpoint
+        url = f"{server_url}/query"
         payload = {"prompt": text}
         headers = {"Content-Type": "application/json"}
         
@@ -152,12 +153,12 @@ def send_to_server(text, server_url="http://192.168.1.197:5000"):
             # Get task ID for TTS tracking
             task_id = response_data.get("task_id")
             
-            # Check conversation mode flag
-            conversation_mode = response_data.get("conversation_mode", False)
+            # Check conversation mode - new response uses 'conversation_active'
+            conversation_mode = response_data.get("conversation_active", False)
             action = response_data.get("action", "end_conversation")
             
             print(f"📍 Task ID: {task_id}")
-            print(f"📍 Conversation mode: {conversation_mode}")
+            print(f"📍 Conversation active: {conversation_mode}")
             print(f"📍 Action: {action}")
             
             # Wait for TTS to complete using long polling

@@ -11,13 +11,13 @@ import json
 class ModelCaller:
     """Call OpenAI models with prepared prompts"""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-3.5-turbo"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o"):
         """
         Initialize the ModelCaller
         
         Args:
             api_key: OpenAI API key (if not provided, will look for OPENAI_API_KEY env var)
-            model: Model name to use (default: gpt-3.5-turbo)
+            model: Model name to use (default: gpt-4o)
         """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
@@ -64,7 +64,7 @@ class ModelCaller:
                 model=self.model,
                 messages=messages,
                 temperature=0.7,
-                max_tokens=500
+                max_tokens=1000  # Increased for GPT-4o
             )
             
             # Extract response

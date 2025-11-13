@@ -3,8 +3,6 @@ import logging
 import sys
 import os
 from datetime import datetime
-import uuid
-import threading
 import time
 
 # Add parent directory to path to import ModelCaller modules
@@ -14,6 +12,7 @@ from ModelCaller.prompt_builder import PromptBuilder
 from ModelCaller.call_model import ModelCaller
 from TextToSpeech.google_tts import GoogleTTS
 from ToolKit.tool_manager import ToolManager
+from MainHub.tts_queue import TTSQueueManager
 
 app = Flask(__name__)
 
@@ -27,13 +26,15 @@ prompt_builder = PromptBuilder(tool_manager=tool_manager)  # Pass tool_manager t
 model_caller = ModelCaller()  # Will use OPENAI_API_KEY env var
 tts = GoogleTTS()  # Will use GOOGLE_API_KEY env var
 
+# Initialize TTS Queue Manager
+tts_queue = TTSQueueManager(tts)
+tts_queue.start()  # Start the queue processing thread
+
 # Simple in-memory conversation storage
 conversation_history = []
 conversation_mode = False
 
-# Track TTS playback states for each request
-tts_states = {}  # {task_id: 'playing' | 'complete'}
-tts_states_lock = threading.Lock()
+# TTS states are now managed by the queue manager
 
 @app.route('/health', methods=['GET'])
 def healthcheck():
@@ -63,16 +64,12 @@ def wait_for_tts(task_id):
     
     # Wait indefinitely until TTS completes
     while True:
-        with tts_states_lock:
-            state = tts_states.get(task_id)
+        # Check task state in queue
+        state = tts_queue.get_task_state(task_id)
         
-        if state == 'complete':
-            print(f"✅ TTS complete for task {task_id}, returning to recorder")
-            # Clean up the state
-            with tts_states_lock:
-                if task_id in tts_states:
-                    del tts_states[task_id]
-            return jsonify({"tts_complete": True, "task_id": task_id}), 200
+        if state in ['complete', 'failed', 'error']:
+            print(f"✅ TTS {state} for task {task_id}, returning to recorder")
+            return jsonify({"tts_complete": True, "task_id": task_id, "state": state}), 200
         
         # Check if task_id exists (in case of error)
         if state is None:
@@ -130,47 +127,157 @@ def build_prompt():
             tool_message = ""
             final_ai_response = ai_response
             
-            if tool_result:
-                print(f"🔧 Executed tool: {tool_result}")
+            # Tool execution loop - allow multiple tool calls until we get a complete answer
+            max_tool_iterations = 5
+            tool_iteration = 0
+            tool_results = []
+            accumulated_data = []  # Store all retrieved data
+            
+            # Build message history for the conversation
+            tool_messages = conversation_history.copy() if conversation_history else []
+            tool_messages.append({"role": "user", "content": user_prompt})
+            
+            while tool_result and tool_iteration < max_tool_iterations:
+                tool_iteration += 1
+                print(f"🔧 [Iteration {tool_iteration}] Executed tool: {tool_result.get('tool')}")
+                tool_results.append(tool_result)
                 
                 # Check tool type for different handling
-                if tool_result.get('tool_type') == 'retrieval' and tool_result.get('success'):
+                if tool_result.get('tool_type') == 'retrieval':
                     # For retrieval tools, feed data back to LLM
-                    print(f"📊 Retrieval tool - feeding data back to LLM")
+                    print(f"📊 [Iteration {tool_iteration}] Processing retrieval tool result...")
                     
-                    # Build a follow-up prompt with the retrieved data
-                    retrieval_context = f"Tool '{tool_result['tool']}' retrieved the following data:\n{tool_result['result']}\n\nNow answer the user's original question based on this data."
+                    if tool_result.get('success'):
+                        # Store the retrieved data
+                        tool_data = tool_result.get('result', {})
+                        accumulated_data.append({
+                            'tool': tool_result.get('tool'),
+                            'data': tool_data
+                        })
+                        
+                        # Build context with the new data
+                        retrieval_context = f"Tool '{tool_result['tool']}' retrieved:\n{tool_data}\n\n"
+                        retrieval_context += "CRITICAL RULES:\n"
+                        retrieval_context += "1. If you have ALL info: Give ULTRA-CONCISE answer (1-2 sentences MAX, will be spoken aloud)\n"
+                        retrieval_context += "2. If you need MORE info: Output ONLY JSON tool call\n\n"
+                        retrieval_context += "VOICE RESPONSE EXAMPLES:\n"
+                        retrieval_context += "❌ 'The temperature is 72°F with humidity at 65%' → TOO LONG\n"
+                        retrieval_context += "✅ 'It's 72 degrees' → PERFECT\n\n"
+                        retrieval_context += "For tools: OUTPUT JSON ONLY!\n"
+                        retrieval_context += 'Example: {"tool": "tool_name", "parameters": {...}}'
+                    else:
+                        # Handle failed tool call
+                        retrieval_context = f"Tool '{tool_result.get('tool')}' failed: {tool_result.get('error', 'Unknown error')}\n"
+                        retrieval_context += "MUST try a different tool. OUTPUT ONLY JSON:\n"
+                        retrieval_context += 'Example: {"tool": "different_tool", "parameters": {...}}\n'
+                        retrieval_context += "NO EXPLANATORY TEXT! JUST THE JSON!"
                     
-                    # Add to conversation as system message
-                    follow_up_messages = conversation_history.copy() if conversation_history else []
-                    follow_up_messages.append({"role": "user", "content": user_prompt})
-                    follow_up_messages.append({"role": "assistant", "content": ai_response})
-                    follow_up_messages.append({"role": "system", "content": retrieval_context})
+                    # Add the assistant's tool call and the result to the message history
+                    tool_messages.append({"role": "assistant", "content": ai_response})
+                    tool_messages.append({"role": "system", "content": retrieval_context})
                     
                     # Build follow-up prompt
                     follow_up_prompt = {
                         "messages": [
                             {"role": "system", "content": prompt_builder.conversation_system_prompt}
-                        ] + follow_up_messages,
+                        ] + tool_messages,
                         "timestamp": datetime.now().isoformat(),
-                        "metadata": {"mode": "retrieval_followup"}
+                        "metadata": {"mode": "tool_chain", "iteration": tool_iteration}
                     }
                     
-                    # Get final response from LLM with the data
-                    print("🤖 Getting final response with retrieved data...")
+                    # Get next response from LLM
+                    print(f"🤖 [Iteration {tool_iteration}] Getting LLM response...")
                     follow_up_response = model_caller.call_model(follow_up_prompt)
                     
                     if follow_up_response.get("success"):
-                        final_ai_response = follow_up_response.get("response", "I found the information but couldn't process it.")
+                        ai_response = follow_up_response.get("response", "")
+                        final_ai_response = ai_response
+                        
+                        # Check if LLM wants to call another tool
+                        next_tool = tool_manager.parse_and_execute_from_response(ai_response)
+                        
+                        if next_tool:
+                            print(f"🔄 [Iteration {tool_iteration}] LLM calling next tool: {next_tool.get('tool')}")
+                            tool_result = next_tool
+                            continue
+                        else:
+                            # No more tools, we have our final answer
+                            print(f"✅ Final answer obtained after {tool_iteration} tool call(s)")
+                            tool_result = None
+                            break
                     else:
-                        final_ai_response = "I retrieved the data but had trouble processing it."
+                        final_ai_response = "I had trouble processing the information."
+                        break
                 
                 elif tool_result.get('tool_type') == 'action':
-                    # For action tools, just confirm the action
+                    # For action tools, often we can just use the tool's message directly
+                    print(f"⚡ [Iteration {tool_iteration}] Processing action tool result...")
+                    
+                    # Special handling for set_reminder - just use its message
+                    if tool_result.get('tool') == 'set_reminder' and tool_result.get('success'):
+                        # Use the concise message from the tool itself
+                        tool_response = tool_result.get('result', {})
+                        if isinstance(tool_response, dict):
+                            final_ai_response = tool_response.get('message', 'Timer set')
+                        else:
+                            final_ai_response = str(tool_response)
+                        tool_result = None
+                        break
+                    
+                    # For other action tools, check if more actions needed
                     if tool_result.get('success'):
-                        tool_message = f" The note has been saved."
+                        action_feedback = f"Action '{tool_result['tool']}' completed successfully."
+                        if tool_result.get('result'):
+                            action_feedback += f" Result: {tool_result.get('result')}"
                     else:
-                        tool_message = f" There was an error with the tool: {tool_result.get('error')}"
+                        action_feedback = f"Action '{tool_result['tool']}' failed: {tool_result.get('error', 'Unknown error')}"
+                    
+                    # Add feedback to messages
+                    tool_messages.append({"role": "assistant", "content": ai_response})
+                    action_prompt = action_feedback + "\n\n"
+                    action_prompt += "CRITICAL: Provide ULTRA-CONCISE response (max 1-2 sentences for voice output)\n"
+                    action_prompt += "If MORE actions needed: Output ONLY JSON tool call\n"
+                    action_prompt += "If task COMPLETE: Give brief confirmation only\n"
+                    tool_messages.append({"role": "system", "content": action_prompt})
+                    
+                    # Check if more actions are needed
+                    follow_up_prompt = {
+                        "messages": [
+                            {"role": "system", "content": prompt_builder.conversation_system_prompt}
+                        ] + tool_messages,
+                        "timestamp": datetime.now().isoformat(),
+                        "metadata": {"mode": "action_chain", "iteration": tool_iteration}
+                    }
+                    
+                    follow_up_response = model_caller.call_model(follow_up_prompt)
+                    
+                    if follow_up_response.get("success"):
+                        ai_response = follow_up_response.get("response", "")
+                        final_ai_response = ai_response
+                        
+                        # Check for another tool call
+                        next_tool = tool_manager.parse_and_execute_from_response(ai_response)
+                        
+                        if next_tool:
+                            print(f"🔄 [Iteration {tool_iteration}] LLM calling next tool: {next_tool.get('tool')}")
+                            tool_result = next_tool
+                            continue
+                        else:
+                            tool_result = None
+                            break
+                    else:
+                        final_ai_response = ai_response
+                        break
+            
+            # Check if we hit max iterations
+            if tool_iteration >= max_tool_iterations:
+                print(f"⚠️ Reached maximum tool iterations ({max_tool_iterations})")
+                final_ai_response += f"\n\n[System: Maximum tool calls reached. Based on the data gathered:]"
+                
+                # Summarize what we collected
+                if accumulated_data:
+                    for item in accumulated_data:
+                        final_ai_response += f"\n- {item['tool']}: Retrieved data successfully"
             
             # Check if AI wants to end conversation (use final response for retrieval tools)
             end_conversation = False
@@ -202,31 +309,20 @@ def build_prompt():
                 conversation_history.append({"role": "assistant", "content": ai_response_clean})
                 print(f"💾 Updated conversation history (now {len(conversation_history)} messages)")
             
-            # Generate a task ID for tracking TTS playback
-            task_id = str(uuid.uuid4())
+            # Step 4: Add to TTS Queue
+            print("🔊 Adding to TTS queue...")
             
-            # Step 4: Send to Text-to-Speech (in background thread)
-            print("🔊 Starting TTS playback...")
+            # Generate a task ID and add to queue
+            task_id = tts_queue.add_to_queue(
+                text=ai_response_clean,
+                metadata={
+                    'source': 'conversation',
+                    'user_prompt': user_prompt[:50],  # First 50 chars for reference
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
             
-            def play_tts_with_tracking():
-                with tts_states_lock:
-                    tts_states[task_id] = 'playing'
-                
-                # Synthesize and play
-                tts_success = tts.speak(ai_response_clean)
-                
-                # Mark as complete
-                with tts_states_lock:
-                    tts_states[task_id] = 'complete'
-                    
-                if not tts_success:
-                    print("⚠️  TTS failed")
-                else:
-                    print(f"✅ TTS complete for task {task_id}")
-            
-            # Start TTS in background thread
-            tts_thread = threading.Thread(target=play_tts_with_tracking)
-            tts_thread.start()
+            print(f"✅ Added to TTS queue: task_id={task_id}, queue_size={tts_queue.get_queue_size()}")
             
             # Handle conversation ending
             if end_conversation:

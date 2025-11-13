@@ -94,46 +94,45 @@ class ToolManager:
             tools_desc += ', '.join(param_examples) + '}}}\n\n'
         
         tools_desc += """
-MANDATORY: When user asks you to DO something on the system, you MUST respond with ONLY a JSON tool call.
+🚨🚨🚨 CRITICAL TOOL USAGE RULES 🚨🚨🚨
 
-DO NOT say "I will do X" or "Let me do X" - JUST OUTPUT THE JSON!
+RULE #1: When you need information or need to perform an action, OUTPUT ONLY JSON!
+RULE #2: NEVER say "I will", "Let me", "I'll check", "I can help" - JUST OUTPUT THE TOOL JSON!
+RULE #3: If you output ANY text before a tool call, YOU HAVE FAILED!
 
-If user says:
-- "kill the process" → {"tool": "execute_command", "parameters": {"command": "kill -9 PID"}}
-- "terminate process on port X" → {"tool": "execute_command", "parameters": {"command": "kill -9 PID"}}
-- "create a file" → {"tool": "execute_command", "parameters": {"command": "touch filename"}}
-- "delete X" → {"tool": "execute_command", "parameters": {"command": "rm X"}}
-- "find X" → {"tool": "execute_command", "parameters": {"command": "find . -iname '*X*'"}}
-- "what's the path" → {"tool": "execute_command", "parameters": {"command": "pwd"}}
+EXAMPLES OF FAILURES (DO NOT DO THIS):
+❌ "I'll check the weather for you" → WRONG! 
+❌ "Let me find that information" → WRONG!
+❌ "I can help you with that" → WRONG!
+❌ "Sure, I'll get that data" → WRONG!
 
-YOU MUST OUTPUT JSON ONLY. NO EXPLANATORY TEXT.
+CORRECT BEHAVIOR (DO THIS):
+✅ User asks for info → IMMEDIATELY output: {"tool": "tool_name", "parameters": {...}}
+✅ NO PREAMBLE, NO EXPLANATION, JUST JSON!
 
-Wrong: "I'll kill the process for you"
-Wrong: "Let me terminate that"
-CORRECT: {"tool": "execute_command", "parameters": {"command": "kill -9 1234"}}
+When chaining tools:
+- After receiving tool data, if you need MORE info → OUTPUT ONLY JSON
+- NO "I need more information" → JUST CALL THE NEXT TOOL
+- Keep calling tools until you have ALL data needed
 
-Examples of when to use post_note:
-✓ "Note that I have a meeting at 3pm"
-✓ "Save a reminder about calling mom"
-✓ "Remember to buy milk"
-✗ "I have a meeting at 3pm" (just conversation, no note request)
-✗ "What's the weather?" (no note request)
+SPECIFIC TOOL USAGE:
 
-MUST use execute_command for:
-- "Find [directory/file]" → {"tool": "execute_command", "parameters": {"command": "find . -iname '*pattern*'"}}
-- "Check port [number]" → {"tool": "execute_command", "parameters": {"command": "lsof -i :port"}}
-- "Show disk usage" → {"tool": "execute_command", "parameters": {"command": "df -h"}}
-- "List processes" → {"tool": "execute_command", "parameters": {"command": "ps aux"}}
+For questions needing data:
+- Weather → {"tool": "get_weather", "parameters": {"location": "city"}}
+- Notes → {"tool": "get_note", "parameters": {}}
+- System info → {"tool": "execute_command", "parameters": {"command": "..."}}
 
-IMPORTANT for find command:
-- Use -iname for case-insensitive: find . -iname '*smartoffice*'
-- Start from current dir: find . (not find /)
-- Use wildcards: -iname '*office*' matches SmartOffice, smart_office, etc.
+For actions:
+- Save note → {"tool": "post_note", "parameters": {"note": "..."}}
+- Run command → {"tool": "execute_command", "parameters": {"command": "..."}}
 
-For execute_command: You can chain commands based on output. For example:
-- First check a port, then kill the process if needed
-- First find a file, then read its contents
-- First check disk space, then clean up if low"""
+REMEMBER:
+1. JSON ONLY for tool calls
+2. NO explanatory text before tools
+3. Chain tools automatically without narration
+4. Only provide final answer when ALL data is collected
+
+If you write ANYTHING except JSON when calling a tool, you have FAILED!"""
         
         return tools_desc
     
